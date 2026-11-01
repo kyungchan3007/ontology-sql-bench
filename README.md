@@ -10,7 +10,7 @@
 ![DB](https://img.shields.io/badge/SQLite-hr.db-003B57?logo=sqlite&logoColor=white)
 ![Questions](https://img.shields.io/badge/questions-30-blue)
 ![Models](https://img.shields.io/badge/models-Haiku%205.5%20·%20Sonnet%205.5-8A2BE2)
-![Status](https://img.shields.io/badge/status-준비%20완료-yellow)
+![Status](https://img.shields.io/badge/status-1차%20실행%20완료-brightgreen)
 
 </div>
 
@@ -23,6 +23,86 @@
 - **방법**: 질문마다 빈 폴더 → 같은 과제 → 다른 지식 문서 → 정답과 비교
 - **측정**: 정답률 (등급별) · 비용(USD) · 시간 · 턴 수
 - **짝 실험**: [ontology-coding-bench](https://github.com/kyungchan3007/ontology-coding-bench) — 같은 회사의 연차 규정으로 코딩 실험
+
+---
+
+## 📊 1차 결과 (2026-11-01, 240회)
+
+> 모델 2 × 조건 4 × 질문 30, effort low, 1회
+
+### 정답률
+
+| 조건 | Haiku 5.5 | Sonnet 5.5 |
+|---|---:|---:|
+| schema-only | 67% | 67% |
+| glossary | 73% | 77% |
+| ontology | 97% | **100%** |
+| spec | **100%** | **100%** |
+
+```mermaid
+xychart-beta
+    title "정답률 (%)"
+    x-axis ["H schema", "H gloss", "H onto", "H spec", "S schema", "S gloss", "S onto", "S spec"]
+    y-axis "%" 0 --> 100
+    bar [67, 73, 97, 100, 67, 77, 100, 100]
+```
+
+### 등급별 정답률 (Sonnet)
+
+| 조건 | simple | join | rule | trap |
+|---|---:|---:|---:|---:|
+| schema-only | 100% | 88% | 13% | 67% |
+| glossary | 100% | 100% | 38% | 67% |
+| ontology | 100% | 100% | 100% | 100% |
+| spec | 100% | 100% | 100% | 100% |
+
+- Haiku도 같은 모양 (ontology trap만 83%)
+
+### 질문 1개당 비용 · 시간
+
+| 조건 | Haiku 5.5 | Sonnet 5.5 |
+|---|---:|---:|
+| schema-only | $0.27 · 14s | $0.19 · 13s |
+| glossary | $0.22 · 11s | $0.18 · 10s |
+| ontology | $0.23 · 10s | $0.19 · 11s |
+| spec | $0.23 · 11s | $0.19 · 11s |
+
+### 정리
+
+- **규칙이 담긴 문서(ontology · spec)를 주면 97~100%**
+- **스키마만 주면 67%** — 단순 조회는 다 맞히지만 회사 규칙 질문은 13%
+- **용어집은 +6~10%p뿐** — 용어 뜻만으로는 "누구를 세는지"를 못 맞힘
+- **ontology vs spec은 차이 거의 없음**
+  - Haiku ontology가 1문제(Q30) 틀린 것만 차이
+- **문서를 더 줘도 비용은 그대로**
+  - 규칙을 모르면 오히려 더 헤맴 (Haiku schema-only 턴 8.4 vs spec 6.9)
+- **Sonnet이 Haiku보다 싸고 정확함** (코딩 실험과 같은 방향)
+  - Haiku 출력 토큰이 약 1.9배
+- 총비용: $50.64 (질문당 대부분은 Claude Code 기본 컨텍스트 비용)
+
+### 자주 틀린 질문 (schema-only · glossary)
+
+| 질문 | 틀린 이유 |
+|---|---|
+| Q17 직원 수 | 임원 · 휴직자 규칙 모름 |
+| Q18 평균 연봉 | 임원 · 수습 제외 모름 |
+| Q19 지급된 성과급 | 비율 · 지급 시점 모름 (답 포기 3회) |
+| Q21 연차 수당 | 0.5일 내림 · 대상 모름 |
+| Q22 영업본부 인원 | 하위 부서 합 · 임원 제외 모름 |
+| Q27 연봉 합계 | 천 원 단위 · 수습 제외 모름 |
+| Q30 성과급 못 받은 A등급 | 지급 조건 모름 (답 포기 3회) |
+
+### 문서가 있어도 틀린 1건
+
+- Haiku · ontology · Q30: 임원을 "받지 못한 사람"에서 뺌 → 0명 (정답 2명)
+  - 임원은 평가를 받아도 성과급이 없으니 세야 함
+
+### 채점 공정성 메모
+
+- Haiku · glossary · Q28 "병가로 빠진 소정근로일은 모두 며칠"
+  - 답 128 = 날짜 중복 제거, 정답 172 = 사람별 일수 합
+  - 질문 문구가 애매할 수 있음 → [#2](https://github.com/kyungchan3007/ontology-sql-bench/issues/2)
+- 원본: [`results/2026-11-01-run1.md`](results/2026-11-01-run1.md)
 
 ---
 
@@ -205,8 +285,9 @@ npm run report
 - [x] 질문 30개 + 정답 SQL
 - [x] 지식 문서 4종
 - [x] 실행 · 채점 · 결과표 스크립트
-- [ ] 1차 실행 (240회)
-- [ ] 결과 정리
+- [x] 1차 실행 (240회)
+- [x] 결과 정리
+- [ ] 3회 반복으로 pass^3 확인
 
 ---
 
