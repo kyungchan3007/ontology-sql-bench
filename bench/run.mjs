@@ -4,6 +4,8 @@
 //   node bench/run.mjs                                     # 전체 (모델 2 × 조건 4 × 질문 30 × 1회)
 //   node bench/run.mjs --models sonnet --conditions spec --questions Q01,Q17
 //   node bench/run.mjs --reps 3 --concurrency 4 --effort medium
+//   node bench/run.mjs --reps 2 --rep-start 2          # 2 · 3회차 (1회차는 이전 실행)
+//   node bench/run.mjs --lean                          # 하네스 다이어트: 도구 3개 + 짧은 시스템 프롬프트
 //
 // 결과: runs/<runId>/results.jsonl, runs/<runId>/<model>/<condition>/rep<n>/<qid>/
 
@@ -12,7 +14,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CONDITIONS, DEFAULT_EFFORT, MODELS, claudeMd, prompt } from './conditions.mjs';
+import { CONDITIONS, DEFAULT_EFFORT, LEAN_SYSTEM_PROMPT, LEAN_TOOLS, MODELS, claudeMd, prompt } from './conditions.mjs';
 import { isCorrect } from './grade.mjs';
 import { QUESTIONS } from '../hidden/questions.mjs';
 import { goldAnswers } from '../hidden/answers.mjs';
@@ -29,15 +31,21 @@ function parseArgs(argv) {
     questions: QUESTIONS.map((q) => q.id),
     effort: DEFAULT_EFFORT,
     reps: 1,
+    repStart: 1,
+    lean: false,
     concurrency: 4,
   };
   for (let i = 0; i < argv.length; i += 2) {
     const [key, value] = [argv[i], argv[i + 1]];
-    if (key === '--models') opts.models = value.split(',');
+    if (key === '--lean') {
+      opts.lean = true;
+      i -= 1; // 값 없는 플래그
+    } else if (key === '--models') opts.models = value.split(',');
     else if (key === '--conditions') opts.conditions = value.split(',');
     else if (key === '--questions') opts.questions = value.split(',');
     else if (key === '--effort') opts.effort = value;
     else if (key === '--reps') opts.reps = Number(value);
+    else if (key === '--rep-start') opts.repStart = Number(value);
     else if (key === '--concurrency') opts.concurrency = Number(value);
     else throw new Error(`알 수 없는 인자: ${key}`);
   }
@@ -81,7 +89,7 @@ async function prepareWorkdir(condition) {
 }
 
 // ---- Claude Code 실행 ----
-async function runClaude({ model, effort, question, cwd }) {
+async function runClaude({ model, effort, lean, question, cwd }) {
   const args = [
     '-p', prompt(question),
     '--model', MODELS[model],
@@ -89,6 +97,7 @@ async function runClaude({ model, effort, question, cwd }) {
     '--output-format', 'stream-json', '--verbose',
     '--permission-mode', 'dontAsk',
     '--allowedTools', 'Read', 'Write', 'Glob', 'Grep', 'Bash(sqlite3:*)',
+    ...(lean ? ['--tools', ...LEAN_TOOLS, '--system-prompt', LEAN_SYSTEM_PROMPT] : []),
     '--setting-sources', 'project',
     '--strict-mcp-config',
     '--no-session-persistence',
@@ -134,13 +143,13 @@ async function runClaude({ model, effort, question, cwd }) {
 const answered = (reply) => reply !== null && typeof reply === 'object' && 'answer' in reply;
 
 // ---- 한 번 실행 (질문 하나) ----
-async function runOne({ runDir, gold, model, condition, effort, rep, q }) {
+async function runOne({ runDir, gold, model, condition, effort, lean, rep, q }) {
   const rel = path.join(model, condition, `rep${rep}`, q.id);
   const outDir = path.join(runDir, rel);
   await fs.mkdir(outDir, { recursive: true });
 
   const work = await prepareWorkdir(condition);
-  const { res, stats } = await runClaude({ model, effort, question: q.question, cwd: work });
+  const { res, stats } = await runClaude({ model, effort, lean, question: q.question, cwd: work });
   await fs.writeFile(path.join(outDir, 'transcript.jsonl'), res.stdout || '');
   if (res.stderr) await fs.writeFile(path.join(outDir, 'stderr.txt'), res.stderr);
 
@@ -155,6 +164,7 @@ async function runOne({ runDir, gold, model, condition, effort, rep, q }) {
     model,
     condition,
     effort,
+    harness: lean ? 'lean' : 'default',
     rep,
     qid: q.id,
     tier: q.tier,
@@ -183,13 +193,13 @@ await fs.mkdir(runDir, { recursive: true });
 await fs.writeFile(path.join(runDir, 'config.json'), JSON.stringify(opts, null, 2));
 
 const jobs = [];
-for (let rep = 1; rep <= opts.reps; rep++)
+for (let rep = opts.repStart; rep < opts.repStart + opts.reps; rep++)
   for (const model of opts.models)
     for (const condition of opts.conditions)
       for (const q of QUESTIONS.filter((x) => opts.questions.includes(x.id)))
-        jobs.push({ runDir, gold, model, condition, effort: opts.effort, rep, q });
+        jobs.push({ runDir, gold, model, condition, effort: opts.effort, lean: opts.lean, rep, q });
 
-console.log(`runId ${runId} — ${jobs.length}회 실행 (동시 ${opts.concurrency}, effort ${opts.effort})`);
+console.log(`runId ${runId} — ${jobs.length}회 실행 (동시 ${opts.concurrency}, effort ${opts.effort}, 하네스 ${opts.lean ? 'lean' : 'default'})`);
 let next = 0;
 await Promise.all(
   Array.from({ length: opts.concurrency }, async () => {
