@@ -1,4 +1,5 @@
-// 연차 규칙(R1~R9) 구현 — ontology-coding-bench 의 참조 구현을 DB 코드값에 맞춘 것. 데이터 생성에만 쓴다.
+// 연차 규칙(R1~R9) 구현 — ontology-coding-bench@b5db954 hidden/reference/leave.js 복사본을 DB 코드값에 맞춘 것. 데이터 생성에만 쓴다.
+// 원본 규칙이 바뀌면 이 파일과 knowledge/source.md 4~5절을 함께 맞춘다.
 
 const DEEMED_PRESENT = new Set(['30', '40', '50']); // R5
 const UNIT_DAYS = { D: 1, H: 0.5, Q: 0.25 }; // R6
