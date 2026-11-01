@@ -3,6 +3,7 @@
 // 사용법:
 //   node bench/report.mjs            # 가장 최근 실행
 //   node bench/report.mjs <runId>
+//   node bench/report.mjs <runId> <runId> ...   # 여러 실행을 합쳐서 (예: 1회차 + 2 · 3회차). 표는 첫 runId 폴더에 저장
 //
 // 지표
 //   정답률   맞힌 질문 / 전체 질문
@@ -19,10 +20,14 @@ import { QUESTIONS } from '../hidden/questions.mjs';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const RUNS = path.join(ROOT, 'runs');
 
-const runId = process.argv[2] ?? (await fs.readdir(RUNS)).filter((d) => !d.startsWith('.')).sort().at(-1);
-if (!runId) throw new Error('runs/ 에 실행 결과가 없습니다');
-const runDir = path.join(RUNS, runId);
-const rows = (await fs.readFile(path.join(runDir, 'results.jsonl'), 'utf8')).trim().split('\n').map((l) => JSON.parse(l));
+const runIds = process.argv.length > 2 ? process.argv.slice(2) : [(await fs.readdir(RUNS)).filter((d) => !d.startsWith('.')).sort().at(-1)];
+if (!runIds[0]) throw new Error('runs/ 에 실행 결과가 없습니다');
+const runId = runIds.join(' + ');
+const runDir = path.join(RUNS, runIds[0]);
+const rows = [];
+for (const id of runIds)
+  for (const l of (await fs.readFile(path.join(RUNS, id, 'results.jsonl'), 'utf8')).trim().split('\n'))
+    rows.push({ harness: 'default', ...JSON.parse(l) });
 
 const TIERS = ['simple', 'join', 'rule', 'trap'];
 const mean = (xs) => {
@@ -35,11 +40,12 @@ const rate = (g) => (g.length ? g.filter((r) => r.correct).length / g.length : n
 
 const order = (list, key) => [...list, ...rows.map((r) => r[key])].filter((v, i, a) => a.indexOf(v) === i);
 const groups = [];
-for (const model of order(Object.keys(MODELS), 'model'))
-  for (const condition of order(Object.keys(CONDITIONS), 'condition')) {
-    const g = rows.filter((r) => r.model === model && r.condition === condition);
-    if (g.length) groups.push({ model, condition, g });
-  }
+for (const harness of order(['default', 'lean'], 'harness'))
+  for (const model of order(Object.keys(MODELS), 'model'))
+    for (const condition of order(Object.keys(CONDITIONS), 'condition')) {
+      const g = rows.filter((r) => r.harness === harness && r.model === model && r.condition === condition);
+      if (g.length) groups.push({ harness, model, condition: harness === 'lean' ? `${condition} (lean)` : condition, g });
+    }
 
 const reps = Math.max(...rows.map((r) => r.rep));
 const effort = [...new Set(rows.map((r) => r.effort))].join(', ');
@@ -49,7 +55,9 @@ const lines = [`# 결과 — ${runId}`, '', `- effort: ${effort}`, `- 반복: ${
 lines.push(`| 모델 | 조건 | 정답률 | pass^${reps} | 질문당 비용 | 질문당 시간 | 턴 | 합계 비용 |`, '|---|---|---:|---:|---:|---:|---:|---:|');
 for (const { model, condition, g } of groups) {
   const byQ = Object.groupBy(g, (r) => r.qid);
-  const allOk = Object.values(byQ).filter((rs) => rs.length === reps && rs.every((r) => r.correct)).length / Object.keys(byQ).length;
+  // 그룹 안의 반복 수가 reps보다 적으면 pass^reps를 계산하지 않는다
+  const full = Object.values(byQ).every((rs) => rs.length === reps);
+  const allOk = full ? Object.values(byQ).filter((rs) => rs.every((r) => r.correct)).length / Object.keys(byQ).length : null;
   lines.push(
     `| ${model} | ${condition} | ${pct(rate(g))} | ${pct(allOk)} | $${mean(g.map((r) => r.costUsd)).toFixed(3)} | ${mean(g.map((r) => r.durationMs / 1000)).toFixed(0)}s | ${mean(g.map((r) => r.turns)).toFixed(1)} | $${total(g.map((r) => r.costUsd)).toFixed(2)} |`,
   );

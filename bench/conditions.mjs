@@ -23,4 +23,13 @@ export function claudeMd(files) {
   return lines.join('\n') + '\n';
 }
 
+// 하네스 다이어트(--lean): Claude Code 기본 지시문 대신 쓰는 짧은 시스템 프롬프트.
+// 기본 지시문은 턴마다 약 3.5만 토큰이라 질문당 비용 대부분을 차지했다 (1차 실행).
+export const LEAN_SYSTEM_PROMPT = [
+  '너는 온톨컴퍼니 인사팀의 데이터 조회 담당이다.',
+  '작업 폴더의 TASK.md와 참고 문서를 읽고, sqlite3로 hr.db를 조회해 질문에 답한다.',
+  '도구는 꼭 필요한 만큼만 쓰고, 답은 answer.json에 저장한 뒤 끝낸다.',
+].join('\n');
+export const LEAN_TOOLS = ['Read', 'Write', 'Bash'];
+
 export const prompt = (question) => `질문: ${question}\n\nTASK.md에 적힌 방법대로 조회하고 answer.json에 답을 저장하라.`;

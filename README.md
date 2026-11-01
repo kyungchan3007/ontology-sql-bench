@@ -10,7 +10,7 @@
 ![DB](https://img.shields.io/badge/SQLite-hr.db-003B57?logo=sqlite&logoColor=white)
 ![Questions](https://img.shields.io/badge/questions-30-blue)
 ![Models](https://img.shields.io/badge/models-Haiku%205.5%20·%20Sonnet%205.5-8A2BE2)
-![Status](https://img.shields.io/badge/status-1차%20실행%20완료-brightgreen)
+![Status](https://img.shields.io/badge/status-2차%20실행%20완료-brightgreen)
 
 </div>
 
@@ -103,6 +103,62 @@ xychart-beta
   - 답 128 = 날짜 중복 제거, 정답 172 = 사람별 일수 합
   - 질문 문구가 애매할 수 있음 → [#2](https://github.com/kyungchan3007/ontology-sql-bench/issues/2)
 - 원본: [`results/2026-11-01-run1.md`](results/2026-11-01-run1.md)
+
+---
+
+## 🔁 2차 결과: 3회 반복 · 하네스 다이어트 (2026-11-01, 330회)
+
+> 1차를 1회차로 쓰고 2 · 3회차 추가. 근거: [Demystifying evals for AI agents](https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents)
+
+### 3회 반복 (pass^3 = 3번 다 맞힌 질문 비율)
+
+| 모델 | 조건 | 정답률 | pass^3 | 질문당 비용 |
+|---|---|---:|---:|---:|
+| Haiku | ontology | 99% | 97% | $0.23 |
+| Haiku | spec | 97% | 90% | $0.23 |
+| Sonnet | ontology | **100%** | **100%** | $0.20 |
+| Sonnet | spec | 97% | 90% | $0.19 |
+
+- **한 번 맞힌다고 매번 맞히는 건 아님** — spec은 정답률 97%여도 pass^3 90%
+- **Sonnet + ontology만 90문항 전부 정답**
+- ontology vs spec 차이는 작고, 표본도 적음 (질문 30개 × 3회)
+
+### 흔들린 질문
+
+| 질문 | 틀린 이유 |
+|---|---|
+| Q30 성과급 못 받은 A등급 | 임원을 "못 받은 사람"에서 뺌 (6회) |
+| Q21 연차 수당 | `연봉/12/209*8`을 정수 나눗셈으로 → 단계마다 버림 (2회) |
+| Q18 평균 연봉 | 수습 경계 계산 차이 (1회) |
+| Q15 등급별 기록 수 | 임원 기록을 뺌 (1회) |
+| Q02 S등급 건수 | 답 파일 미작성 (1회) |
+
+- Q21은 SQLite 정수 나눗셈 함정: 규정은 "÷12 ÷209 ×8 후 원 미만 버림"
+- Q30 · Q15는 "임원 제외"를 질문 범위에까지 넓혀 적용한 실수
+
+### 하네스 다이어트 (Sonnet · spec, 3회)
+
+| 하네스 | 정답률 | pass^3 | 질문당 비용 | 입력 토큰 |
+|---|---:|---:|---:|---:|
+| 기본 | 97% | 90% | $0.186 | 143k |
+| lean | **98%** | **97%** | **$0.097** | 47k |
+
+- lean = `--tools Read,Write,Bash` + 짧은 `--system-prompt`
+- **비용 −48%, 정확도는 그대로**
+- 사내 DB 챗봇에는 범용 코딩 에이전트 지시문이 필요 없음
+- 2차 총비용: $59.37
+- 원본: [`results/2026-11-01-run2-repeat-lean.md`](results/2026-11-01-run2-repeat-lean.md)
+
+---
+
+## 🧾 지금까지의 결론
+
+- **규칙이 담긴 문서가 핵심** — 스키마만 67%, 용어집 73~77%, 규칙 문서 97~100%
+- **문서 모양(ontology vs spec)은 작은 차이** — Sonnet ontology만 pass^3 100%
+- **가성비 1위: Sonnet + 규칙 문서 + effort low + lean 하네스** ($0.10/질문)
+- 코딩 실험과의 차이
+  - 코딩: 문서만 있으면 모양 무관, 전부 100%
+  - 챗봇: "누구를 세는가" 같은 규칙이 문서에 있어야 맞힘
 
 ---
 
@@ -259,10 +315,18 @@ npm run bench
 node --no-warnings bench/run.mjs --models sonnet --conditions spec --questions Q17,Q19
 ```
 
-- 결과표
+- 결과표 (여러 실행 합치기 가능)
 
 ```bash
 npm run report
+node --no-warnings bench/report.mjs <runId1> <runId2>
+```
+
+- 2차 재현
+
+```bash
+node --no-warnings bench/run.mjs --conditions ontology,spec --reps 2 --rep-start 2
+node --no-warnings bench/run.mjs --lean --models sonnet --conditions spec --reps 3
 ```
 
 | 옵션 | 기본값 |
@@ -272,6 +336,8 @@ npm run report
 | `--questions` | Q01~Q30 |
 | `--effort` | low |
 | `--reps` | 1 |
+| `--rep-start` | 1 |
+| `--lean` | 꺼짐 |
 | `--concurrency` | 4 |
 
 - 필요: Node 22.13+ (`node:sqlite`), `sqlite3` CLI, 로그인된 `claude` CLI
@@ -287,7 +353,9 @@ npm run report
 - [x] 실행 · 채점 · 결과표 스크립트
 - [x] 1차 실행 (240회)
 - [x] 결과 정리
-- [ ] 3회 반복으로 pass^3 확인
+- [x] 3회 반복으로 pass^3 확인
+- [x] 하네스 다이어트 (lean)
+- [ ] Q28 문구 수정 (#2)
 
 ---
 
